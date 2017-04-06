@@ -137,20 +137,29 @@ int ruleset_rules_atomic_add(struct goblin_ruleset_st *ruleset, struct goblin_ru
 
 	if (rule->ip != 0 && rule->ucid == 0) {
 		ret = hasht_find_item(&ruleset->ip_htable, rule->ip);
-		hasht_modify_item(&ruleset->ip_htable, rule->ip, rule->expire, rule->punish);
+		if (ret >= 0) {
+			hasht_modify_item(&ruleset->ip_htable, rule->ip, rule->expire, rule->punish);
+			pthread_mutex_unlock(&ruleset->lock);
+			return 0;
+		}
 	} else if (rule->ip == 0 && rule->ucid != 0) {
-		hasht_modify_item(&ruleset->ucid_htable, rule->ip, rule->expire, rule->punish);
+		ret = hasht_find_item(&ruleset->ucid_htable, rule->ucid);
+		if (ret >= 0) {
+			hasht_modify_item(&ruleset->ucid_htable, rule->ucid, rule->expire, rule->punish);
+			pthread_mutex_unlock(&ruleset->lock);
+			return 0;
+		}
 	}
 
 	if (ruleset->nr_rules >= (RULESET_SIZE * 0.9)) {
 		//check FREE_RULESET_SIZE rules each travel
 		int count = 0;
-		int free = 0;
+		//int free = 0;
 		for (i = ruleset->free_pos; i < ruleset->rule_next; ++i) {
 			count++;
 			if ((ruleset->rules[i].punish > 0) && (ruleset->rules[i].expire < time(NULL))) {
 				ruleset_rule_del_unlocked(ruleset, i);
-				free++;
+				//free++;
 			}
 			if (count >= FREE_RULESET_SIZE) {
 				break;
@@ -193,30 +202,34 @@ int ruleset_rules_atomic_add(struct goblin_ruleset_st *ruleset, struct goblin_ru
 
 void ruleset_rule_del(struct goblin_ruleset_st *ruleset, int n)
 {
+	int ret = -1;
 	pthread_mutex_lock(&ruleset->lock);
 	if (ruleset->rules[n].ip > 0) {
-		hasht_delete_item(&ruleset->ip_htable, ruleset->rules[n].ip);
+		ret = hasht_delete_item(&ruleset->ip_htable, ruleset->rules[n].ip);
 	}
 	if (ruleset->rules[n].ucid > 0) {
-		hasht_delete_item(&ruleset->ucid_htable, ruleset->rules[n].ucid);
+		ret = hasht_delete_item(&ruleset->ucid_htable, ruleset->rules[n].ucid);
 	}
-	rule_free(ruleset, n);
-
-	ruleset->nr_rules--;
+	if (ret >= 0) {
+		rule_free(ruleset, n);
+		ruleset->nr_rules--;
+	}
 	pthread_mutex_unlock(&ruleset->lock);
 }
 
 void ruleset_rule_del_unlocked(struct goblin_ruleset_st *ruleset, int n)
 {
+	int ret = -1;
 	if (ruleset->rules[n].ip > 0) {
-		hasht_delete_item(&ruleset->ip_htable, ruleset->rules[n].ip);
+		ret = hasht_delete_item(&ruleset->ip_htable, ruleset->rules[n].ip);
 	}
 	if (ruleset->rules[n].ucid > 0) {
-		hasht_delete_item(&ruleset->ucid_htable, ruleset->rules[n].ucid);
+		ret = hasht_delete_item(&ruleset->ucid_htable, ruleset->rules[n].ucid);
 	}
-	rule_free(ruleset, n);
-
-	ruleset->nr_rules--;
+	if (ret >= 0) {
+		rule_free(ruleset, n);
+		ruleset->nr_rules--;
+	}
 }
 
 int ruleset_rule_del_ip(struct goblin_ruleset_st *ruleset, int32_t ip)
@@ -243,7 +256,7 @@ int ruleset_rule_del_ucid(struct goblin_ruleset_st *ruleset, int64_t ucid)
 
 int ruleset_rules_atomic_del(struct goblin_ruleset_st *ruleset, struct goblin_rule_st *rule)
 {
-	int ret = 0;
+	int ret = -1;
 
 	pthread_mutex_lock(&ruleset->lock);
 	if (rule->ip > 0) {
@@ -251,7 +264,9 @@ int ruleset_rules_atomic_del(struct goblin_ruleset_st *ruleset, struct goblin_ru
 	} else if (rule->ucid > 0 ) {
 		ret = ruleset_rule_del_ucid(ruleset, rule->ucid);
 	}
-	ruleset->nr_rules--;
+	if (ret >= 0) {
+		ruleset->nr_rules--;
+	}
 	pthread_mutex_unlock(&ruleset->lock);
 
 	return ret;

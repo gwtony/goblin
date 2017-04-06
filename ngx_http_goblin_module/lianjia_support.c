@@ -249,7 +249,7 @@ security_lianjia_get_ucid(ngx_http_request_t *r)
     if (sscanf(tmp, "%x", (unsigned int*)&salt)<1) {
         goto error;
     }
-	fprintf(stderr, "salt is %x\n", salt);
+	//fprintf(stderr, "salt is %x\n", salt);
 
 
 	str_crc.data = token.data +28;
